@@ -1,58 +1,50 @@
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
 import { AuthenticationError, UserInputError } from 'apollo-server';
+import { generateToken } from './utils/auth';
+import * as dotenv from 'dotenv';
+import { IAddBookArgs, IAddReviewArgs, IContext, IDeleteReviewArgs, ILoginArgs, IRegisterArgs, IUpdateReviewArgs } from './interface/database-schema.interfaces';
+
+dotenv.config();
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-const generateToken = (user: { id: number }) => {
-  return jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-};
-
-const getUserId = (token: string) => {
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-    return decoded.userId;
-  } catch (e) {
-    throw new Error('Invalid token');
-  }
-};
 
 export const resolvers = {
   Query: {
-    getBooks: async () => {
+    getBooks: async (_: undefined, __: undefined, context: IContext) => {
       try {
-        return await prisma.book.findMany();
+        return await context.prisma.book.findMany();
       } catch (error) {
+        console.error('Error fetching books:', error);
         throw new Error('Could not fetch books');
       }
     },
-    getBook: async (_: any, args: { id: string }) => {
+    getBook: async (_: undefined, args: { id: string }, context: IContext) => {
       try {
-        return await prisma.book.findUnique({ where: { id: parseInt(args.id) } });
+        return await context.prisma.book.findUnique({ where: { id: parseInt(args.id) } });
       } catch (error) {
         throw new Error('Could not fetch book');
       }
     },
-    getReviews: async (_: any, args: { bookId: string }) => {
+    getReviews: async (_: undefined, args: { bookId: string }, context: IContext) => {
       try {
-        return await prisma.review.findMany({ where: { bookId: parseInt(args.bookId) } });
+        return await context.prisma.review.findMany({ where: { bookId: parseInt(args.bookId) } });
       } catch (error) {
         throw new Error('Could not fetch reviews');
       }
     },
-    getMyReviews: async (_: any, __: any, context: any) => {
+    getMyReviews: async (_: undefined, __: undefined, context: IContext) => {
       if (!context.user) throw new AuthenticationError('Not authenticated');
       try {
-        return await prisma.review.findMany({ where: { userId: context.user.id } });
+        return await context.prisma.review.findMany({ where: { userId: context.user.id } });
       } catch (error) {
         throw new Error('Could not fetch your reviews');
       }
     },
   },
   Mutation: {
-    register: async (_: any, args: { username: string; email: string; password: string }) => {
+    register: async (_: undefined, args: IRegisterArgs) => {
       try {
         const hashedPassword = await bcrypt.hash(args.password, 10);
         const user = await prisma.user.create({
@@ -70,7 +62,7 @@ export const resolvers = {
         throw new Error('Could not register user');
       }
     },
-    login: async (_: any, args: { email: string; password: string }) => {
+    login: async (_: undefined, args: ILoginArgs) => {
       const user = await prisma.user.findUnique({ where: { email: args.email } });
       if (!user) throw new UserInputError('Invalid email or password');
       const valid = await bcrypt.compare(args.password, user.password);
@@ -80,10 +72,10 @@ export const resolvers = {
         user,
       };
     },
-    addBook: async (_: any, args: { title: string; author: string; publishedYear: number }, context: any) => {
+    addBook: async (_: undefined, args: IAddBookArgs, context: IContext) => {
       if (!context.user) throw new AuthenticationError('Not authenticated');
       try {
-        return await prisma.book.create({
+        return await context.prisma.book.create({
           data: {
             title: args.title,
             author: args.author,
@@ -94,10 +86,10 @@ export const resolvers = {
         throw new Error('Could not add book');
       }
     },
-    addReview: async (_: any, args: { bookId: string; rating: number; comment: string }, context: any) => {
+    addReview: async (_: undefined, args: IAddReviewArgs, context: IContext) => {
       if (!context.user) throw new AuthenticationError('Not authenticated');
       try {
-        return await prisma.review.create({
+        return await context.prisma.review.create({
           data: {
             userId: context.user.id,
             bookId: parseInt(args.bookId),
@@ -109,12 +101,12 @@ export const resolvers = {
         throw new Error('Could not add review');
       }
     },
-    updateReview: async (_: any, args: { reviewId: string; rating?: number; comment?: string }, context: any) => {
+    updateReview: async (_: undefined, args: IUpdateReviewArgs, context: IContext) => {
       if (!context.user) throw new AuthenticationError('Not authenticated');
       try {
-        const review = await prisma.review.findUnique({ where: { id: parseInt(args.reviewId) } });
+        const review = await context.prisma.review.findUnique({ where: { id: parseInt(args.reviewId) } });
         if (!review || review.userId !== context.user.id) throw new AuthenticationError('Not authorized');
-        return await prisma.review.update({
+        return await context.prisma.review.update({
           where: { id: parseInt(args.reviewId) },
           data: {
             rating: args.rating,
@@ -125,12 +117,12 @@ export const resolvers = {
         throw new Error('Could not update review');
       }
     },
-    deleteReview: async (_: any, args: { reviewId: string }, context: any) => {
+    deleteReview: async (_: undefined, args: IDeleteReviewArgs, context: IContext) => {
       if (!context.user) throw new AuthenticationError('Not authenticated');
       try {
-        const review = await prisma.review.findUnique({ where: { id: parseInt(args.reviewId) } });
+        const review = await context.prisma.review.findUnique({ where: { id: parseInt(args.reviewId) } });
         if (!review || review.userId !== context.user.id) throw new AuthenticationError('Not authorized');
-        await prisma.review.delete({ where: { id: parseInt(args.reviewId) } });
+        await context.prisma.review.delete({ where: { id: parseInt(args.reviewId) } });
         return true;
       } catch (error) {
         throw new Error('Could not delete review');
